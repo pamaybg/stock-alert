@@ -1,0 +1,49 @@
+name: RSI Alert
+
+on:
+  schedule:
+    # 미국 정규장(9:30~16:00 ET)을 여유있게 커버: 13:00~21:30 UTC, 평일, 30분마다
+    # (서머타임/표준시 전환에 따라 실제 장 시작보다 조금 일찍/늦게 걸릴 수 있음 - 문제 없음)
+    - cron: "0,30 13-21 * * 1-5"
+  workflow_dispatch: {}  # Actions 탭에서 수동 실행(테스트용)도 가능
+
+permissions:
+  contents: write  # state/last_alert.json 커밋을 위해 필요
+
+concurrency:
+  group: rsi-check
+  cancel-in-progress: false  # 실행 중 겹쳐서 state 파일이 꼬이지 않도록
+
+jobs:
+  check-rsi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run RSI check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python rsi_monitor.py
+
+      - name: Commit updated state file
+        run: |
+          git config user.name "rsi-alert-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add state/last_alert.json
+          if git diff --cached --quiet; then
+            echo "state 변경 없음, 커밋 스킵"
+          else
+            git commit -m "chore: update RSI alert state [skip ci]"
+            git push
+          fi
