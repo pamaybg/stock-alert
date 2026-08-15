@@ -2,7 +2,7 @@
 RSI(14) 미국 주식 모니터링 스크립트
 ---------------------------------
 - config/tickers.json 에 있는 티커들을 순회하며 일봉(daily close) 기준 RSI(14)를 계산합니다.
-- RSI < 20 이면 텔레그램으로 알림을 보냅니다.
+- RSI < 30 이면 텔레그램으로 알림을 보냅니다.
 - 같은 티커는 하루(Asia/Seoul 기준 날짜)에 한 번만 알림을 보냅니다.
 - RSI 계산은 TA-Lib(업계 표준 레퍼런스 구현체)을 사용합니다.
 
@@ -33,7 +33,7 @@ CONFIG_PATH = BASE_DIR / "config" / "tickers.json"
 STATE_PATH = BASE_DIR / "state" / "last_alert.json"
 
 RSI_PERIOD = 14
-RSI_THRESHOLD = 20
+RSI_THRESHOLD = 30
 # RSI(Wilder's smoothing)는 초기 구간이 불안정하므로 넉넉하게 6개월치 데이터를 받아옵니다.
 HISTORY_PERIOD = "6mo"
 
