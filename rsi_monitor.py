@@ -7,6 +7,7 @@ RSI(14) 미국 주식 모니터링 스크립트
 - 둘 중 하나라도 RSI < RSI_THRESHOLD 이면 텔레그램으로 알림을 보냅니다.
 - 같은 실행에서 일봉/주봉이 동시에 조건을 만족하면 알림 문구를 하나로 합쳐서 보냅니다.
 - 같은 티커·같은 기준(일봉/주봉)은 하루(Asia/Seoul 기준 날짜)에 한 번만 알림을 보냅니다.
+- 알림이 실제로 발송될 때마다 state/alert_history.jsonl 에 이력이 한 줄씩 누적됩니다(초기화되지 않음).
 - RSI 계산은 TA-Lib(업계 표준 레퍼런스 구현체)을 사용합니다.
 
 이 스크립트는 GitHub Actions에서 주기적으로 실행되는 것을 전제로 작성되었습니다.
@@ -34,6 +35,9 @@ except ImportError:  # 매우 오래된 파이썬 대비 (일반적으로 필요
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config" / "tickers.json"
 STATE_PATH = BASE_DIR / "state" / "last_alert.json"
+# 알림이 발송될 때마다 한 줄씩 쌓이는 이력 파일 (JSON Lines).
+# last_alert.json과 달리 매일 초기화되지 않고 계속 누적됩니다.
+HISTORY_PATH = BASE_DIR / "state" / "alert_history.jsonl"
 
 RSI_PERIOD = 14
 RSI_THRESHOLD = 35  # 일봉/주봉 공통 기준
@@ -109,6 +113,19 @@ def save_state(state: dict) -> None:
     with open(STATE_PATH, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
         f.write("\n")
+
+
+def append_alert_history(entries: list[dict]) -> None:
+    """실제 알림이 발송됐을 때만 호출됩니다. 파일을 매번 새로 쓰지 않고 뒤에 이어붙이기만 해서,
+    깃 커밋 diff도 작고 이전 이력이 절대 사라지지 않습니다."""
+    if not entries:
+        return
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(HISTORY_PATH, "a", encoding="utf-8") as f:
+        for entry in entries:
+            f.write(json.dumps(entry, ensure_ascii=False))
+            f.write("\n")
+    log.info(f"알림 이력 {len(entries)}건을 {HISTORY_PATH.name} 에 기록했습니다.")
 
 
 def compute_rsi(ticker: str, interval: str, period: str, label: str) -> Optional[float]:
@@ -251,6 +268,7 @@ def main() -> None:
     log.info(f"감시 티커 {len(tickers)}개: {', '.join(tickers)}")
 
     any_new_alert = False
+    history_entries: list[dict] = []
 
     for ticker in tickers:
         sent_types = set(alerted.get(ticker, []))
@@ -289,15 +307,33 @@ def main() -> None:
 
         if send_telegram(message):
             sent_types_updated = set(alerted.get(ticker, []))
+            triggered_types = []
             if daily_triggered:
                 sent_types_updated.add("daily")
+                triggered_types.append("daily")
             if weekly_triggered:
                 sent_types_updated.add("weekly")
+                triggered_types.append("weekly")
             alerted[ticker] = sorted(sent_types_updated)
             any_new_alert = True
 
+            now_utc = datetime.now(timezone.utc)
+            history_entries.append(
+                {
+                    "sent_at_kst": now_utc.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S") if KST else None,
+                    "sent_at_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                    "ticker": ticker,
+                    "triggered": triggered_types,  # ["daily"], ["weekly"], 또는 ["daily", "weekly"]
+                    "daily_rsi": round(daily_rsi, 4) if daily_triggered else None,
+                    "weekly_rsi": round(weekly_rsi, 4) if weekly_triggered else None,
+                    "threshold": RSI_THRESHOLD,
+                    "message": message,
+                }
+            )
+
     state["alerted"] = alerted
     save_state(state)
+    append_alert_history(history_entries)
 
     if any_new_alert:
         log.info(f"신규 알림 발송 결과: {json.dumps(alerted, ensure_ascii=False)}")

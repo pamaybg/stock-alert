@@ -40,7 +40,7 @@ jobs:
         run: |
           git config user.name "rsi-alert-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add state/last_alert.json
+          git add state/last_alert.json state/alert_history.jsonl
           if git diff --cached --quiet; then
             echo "state 변경 없음, 커밋 스킵"
           else
