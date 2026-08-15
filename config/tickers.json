@@ -1,9 +1,10 @@
 {
   "_comment": "이 파일만 수정하면 됩니다. 코드 변경이나 워크플로우 재실행 없이, 다음 스케줄 실행부터 바로 반영됩니다.",
   "tickers": [
-    "AAPL",
-    "TSLA",
-    "NVDA",
-    "MSFT"
+    "SOXX",
+    "SOXL",
+    "QQQ",
+    "TQQQ",
+    "SPCX"
   ]
 }
