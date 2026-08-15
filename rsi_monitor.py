@@ -40,7 +40,7 @@ STATE_PATH = BASE_DIR / "state" / "last_alert.json"
 HISTORY_PATH = BASE_DIR / "state" / "alert_history.jsonl"
 
 RSI_PERIOD = 14
-RSI_THRESHOLD = 35  # 일봉/주봉 공통 기준
+RSI_THRESHOLD = 60  # 일봉/주봉 공통 기준
 
 # RSI(Wilder's smoothing)는 초기 구간이 불안정하므로 넉넉한 기간의 데이터를 받아옵니다.
 DAILY_HISTORY_PERIOD = "6mo"    # 약 125개 일봉
