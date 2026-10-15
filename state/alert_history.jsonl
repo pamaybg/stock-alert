@@ -1,0 +1,2 @@
+{"sent_at_kst": "2026-10-16 02:41:50", "sent_at_utc": "2026-10-15 17:41:50", "ticker": "SOXX", "triggered": ["daily"], "daily_rsi": 34.7298, "weekly_rsi": null, "threshold": 35, "message": "⚠️ <b>SOXX</b> 일봉 RSI(14) 과매도 구간 진입\nRSI: 34.73 (기준: 35 이하)\n기준일: 2026-10-16 (KST)"}
+{"sent_at_kst": "2026-10-16 02:41:51", "sent_at_utc": "2026-10-15 17:41:51", "ticker": "SOXL", "triggered": ["daily"], "daily_rsi": 33.5199, "weekly_rsi": null, "threshold": 35, "message": "⚠️ <b>SOXL</b> 일봉 RSI(14) 과매도 구간 진입\nRSI: 33.52 (기준: 35 이하)\n기준일: 2026-10-16 (KST)"}
