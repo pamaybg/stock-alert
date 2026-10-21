@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -128,10 +129,12 @@ def append_alert_history(entries: list[dict]) -> None:
     log.info(f"알림 이력 {len(entries)}건을 {HISTORY_PATH.name} 에 기록했습니다.")
 
 
-def compute_rsi(ticker: str, interval: str, period: str, label: str) -> Optional[float]:
+def compute_rsi(ticker: str, interval: str, period: str, label: str) -> tuple[Optional[float], Optional[str]]:
     """
     interval: "1d"(일봉) 또는 "1wk"(주봉)
     label: 로그에 찍을 한글 라벨 ("일봉" / "주봉")
+    반환값: (최신 RSI, 마지막 봉 날짜 문자열)
+    주의: yfinance 주봉은 "그 주의 월요일" 날짜로 표시되지만 종가는 그 주의 가장 최근 거래일 종가입니다.
     """
     try:
         # auto_adjust=False: 배당/분할로 보정되지 않은 "원래 종가"를 사용합니다.
@@ -141,26 +144,28 @@ def compute_rsi(ticker: str, interval: str, period: str, label: str) -> Optional
         hist = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=False)
     except Exception as e:
         log.warning(f"[{ticker}][{label}] 데이터 조회 실패: {e}")
-        return None
+        return None, None
 
     if hist is None or hist.empty or "Close" not in hist.columns:
         log.warning(f"[{ticker}][{label}] 유효한 가격 데이터가 없습니다. 티커명을 확인하세요.")
-        return None
+        return None, None
 
     closes = hist["Close"].dropna()
     if len(closes) < RSI_PERIOD + 1:
         log.warning(f"[{ticker}][{label}] RSI 계산에 데이터가 부족합니다 ({len(closes)}개).")
-        return None
+        return None, None
 
     close_values = closes.to_numpy(dtype="float64")
     rsi_series = talib.RSI(close_values, timeperiod=RSI_PERIOD)
     latest_rsi = rsi_series[-1]
+    last_bar_str = str(closes.index[-1].date())
+    date_note = " (주 시작일 표기, 종가는 그 주 최근 거래일 기준)" if interval == "1wk" else ""
 
     if DEBUG:
         log.info(f"[{ticker}][{label}] ===== 검산용 상세 로그 (최근 {DEBUG_TAIL_ROWS}개 {label}) =====")
         log.info(
             f"[{ticker}][{label}] 데이터소스=yfinance, 조회기간={period}, "
-            f"총 {len(closes)}개 {label}, 원가(비조정) 종가 사용"
+            f"총 {len(closes)}개 {label}, 원가(비조정) 종가 사용{date_note}"
         )
 
         tail_dates = closes.index[-DEBUG_TAIL_ROWS:]
@@ -195,16 +200,16 @@ def compute_rsi(ticker: str, interval: str, period: str, label: str) -> Optional
 
     if pd.isna(latest_rsi):
         log.warning(f"[{ticker}][{label}] RSI 값이 유효하지 않습니다(NaN).")
-        return None
+        return None, None
 
-    return float(latest_rsi)
+    return float(latest_rsi), last_bar_str
 
 
-def get_daily_rsi(ticker: str) -> Optional[float]:
+def get_daily_rsi(ticker: str) -> tuple[Optional[float], Optional[str]]:
     return compute_rsi(ticker, interval="1d", period=DAILY_HISTORY_PERIOD, label="일봉")
 
 
-def get_weekly_rsi(ticker: str) -> Optional[float]:
+def get_weekly_rsi(ticker: str) -> tuple[Optional[float], Optional[str]]:
     return compute_rsi(ticker, interval="1wk", period=WEEKLY_HISTORY_PERIOD, label="주봉")
 
 
@@ -236,23 +241,26 @@ def send_telegram(message: str) -> bool:
     return True
 
 
-def build_message(ticker: str, date_str: str, daily_rsi: Optional[float], weekly_rsi: Optional[float]) -> str:
+def build_message(ticker: str, date_str: str, daily_rsi: Optional[float], weekly_rsi: Optional[float],
+                  bar_date: Optional[str] = None) -> str:
+    # 기준일(KST 실행일)과 별개로, 실제 RSI 계산에 쓰인 마지막 일봉 날짜(미국 거래일)를 함께 표시합니다.
+    bar_line = f"\n마지막 봉: {bar_date} (미국 거래일)" if bar_date else ""
     if daily_rsi is not None and weekly_rsi is not None:
         return (
             f"⚠️ <b>{ticker}</b> 일봉+주봉 RSI(14) 동시 과매도\n"
             f"일봉 RSI: {daily_rsi:.2f} / 주봉 RSI: {weekly_rsi:.2f} (기준: {RSI_THRESHOLD} 이하)\n"
-            f"기준일: {date_str} (KST)"
+            f"기준일: {date_str} (KST){bar_line}"
         )
     if daily_rsi is not None:
         return (
             f"⚠️ <b>{ticker}</b> 일봉 RSI(14) 과매도 구간 진입\n"
             f"RSI: {daily_rsi:.2f} (기준: {RSI_THRESHOLD} 이하)\n"
-            f"기준일: {date_str} (KST)"
+            f"기준일: {date_str} (KST){bar_line}"
         )
     return (
         f"⚠️ <b>{ticker}</b> 주봉 RSI(14) 과매도 구간 진입\n"
         f"RSI: {weekly_rsi:.2f} (기준: {RSI_THRESHOLD} 이하)\n"
-        f"기준일: {date_str} (KST)"
+        f"기준일: {date_str} (KST){bar_line}"
     )
 
 
@@ -269,28 +277,31 @@ def main() -> None:
 
     any_new_alert = False
     history_entries: list[dict] = []
+    # 조용히 묻히던 실패를 집계해서, 마지막에 Actions 실행을 실패(빨간불)로 표시합니다.
+    fetch_failures: list[str] = []
+    send_failures: list[str] = []
 
     for ticker in tickers:
         sent_types = set(alerted.get(ticker, []))
         need_daily = "daily" not in sent_types
         need_weekly = "weekly" not in sent_types
 
-        if not need_daily and not need_weekly:
-            log.info(f"[{ticker}] 오늘 일봉/주봉 모두 이미 알림을 보냈습니다 -> 스킵")
-            continue
+        # 오늘 이미 알림을 보낸 기준이라도 RSI는 항상 일봉/주봉 모두 계산해서 로그에 남깁니다.
+        # (중복 방지는 "알림 발송" 단계에서만 적용)
+        daily_rsi, daily_bar = get_daily_rsi(ticker)
+        weekly_rsi, _ = get_weekly_rsi(ticker)
+        if daily_rsi is None:
+            fetch_failures.append(f"{ticker}(일봉)")
+        if weekly_rsi is None:
+            fetch_failures.append(f"{ticker}(주봉)")
 
-        daily_rsi = get_daily_rsi(ticker) if need_daily else None
-        weekly_rsi = get_weekly_rsi(ticker) if need_weekly else None
+        if daily_rsi is not None:
+            suffix = "" if need_daily else " (오늘 이미 알림 발송됨 -> 재알림 안 함)"
+            log.info(f"[{ticker}] 일봉 RSI(14) = {daily_rsi:.2f} (마지막 봉 {daily_bar}){suffix}")
 
-        if not need_daily:
-            log.info(f"[{ticker}] 일봉은 오늘 이미 알림을 보냈습니다 -> 스킵")
-        elif daily_rsi is not None:
-            log.info(f"[{ticker}] 일봉 RSI(14) = {daily_rsi:.2f}")
-
-        if not need_weekly:
-            log.info(f"[{ticker}] 주봉은 오늘 이미 알림을 보냈습니다 -> 스킵")
-        elif weekly_rsi is not None:
-            log.info(f"[{ticker}] 주봉 RSI(14) = {weekly_rsi:.2f}")
+        if weekly_rsi is not None:
+            suffix = "" if need_weekly else " (오늘 이미 알림 발송됨 -> 재알림 안 함)"
+            log.info(f"[{ticker}] 주봉 RSI(14) = {weekly_rsi:.2f}{suffix}")
 
         daily_triggered = need_daily and daily_rsi is not None and daily_rsi < RSI_THRESHOLD
         weekly_triggered = need_weekly and weekly_rsi is not None and weekly_rsi < RSI_THRESHOLD
@@ -303,6 +314,7 @@ def main() -> None:
             state["date"],
             daily_rsi if daily_triggered else None,
             weekly_rsi if weekly_triggered else None,
+            daily_bar,
         )
 
         if send_telegram(message):
@@ -330,6 +342,8 @@ def main() -> None:
                     "message": message,
                 }
             )
+        else:
+            send_failures.append(ticker)
 
     state["alerted"] = alerted
     save_state(state)
@@ -339,6 +353,13 @@ def main() -> None:
         log.info(f"신규 알림 발송 결과: {json.dumps(alerted, ensure_ascii=False)}")
     else:
         log.info("신규 알림 없음")
+
+    if fetch_failures:
+        log.error(f"RSI 계산 실패: {', '.join(fetch_failures)}")
+    if send_failures:
+        log.error(f"텔레그램 발송 실패 티커: {', '.join(send_failures)} (다음 실행에서 재시도)")
+    if fetch_failures or send_failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

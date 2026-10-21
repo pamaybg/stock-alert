@@ -4,7 +4,8 @@ on:
   schedule:
     # 미국 정규장(9:30~16:00 ET)을 여유있게 커버: 13:00~21:30 UTC, 평일, 30분마다
     # (서머타임/표준시 전환에 따라 실제 장 시작보다 조금 일찍/늦게 걸릴 수 있음 - 문제 없음)
-    - cron: "0,30 13-21 * * 1-5"
+    # 정각/30분은 GitHub 전체 부하가 몰려 스케줄이 자주 누락되므로 17/47분으로 피해서 실행합니다.
+    - cron: "17,47 13-21 * * 1-5"
   workflow_dispatch: {}  # Actions 탭에서 수동 실행(테스트용)도 가능
 
 permissions:
@@ -37,6 +38,8 @@ jobs:
         run: python rsi_monitor.py
 
       - name: Commit updated state file
+        # 스크립트가 실패(exit 1)해도 이미 발송된 알림 state는 반드시 커밋합니다.
+        if: always()
         run: |
           git config user.name "rsi-alert-bot"
           git config user.email "actions@users.noreply.github.com"
