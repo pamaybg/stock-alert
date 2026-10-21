@@ -1,12 +1,5 @@
 {
-  "date": "2026-10-21",
-  "alerted": {
-    "SOXX": [
-      "daily"
-    ],
-    "SOXL": [
-      "daily"
-    ]
-  },
-  "last_checked_utc": "2026-10-21 13:46:19"
+  "date": "2026-10-22",
+  "alerted": {},
+  "last_checked_utc": "2026-10-21 18:16:23"
 }
