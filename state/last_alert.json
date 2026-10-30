@@ -1,5 +1,18 @@
 {
-  "date": "2026-10-30",
-  "alerted": {},
-  "last_checked_utc": "2026-10-29 23:18:20"
+  "date": "2026-10-31",
+  "alerted": {
+    "SOXX": [
+      "daily"
+    ],
+    "SOXL": [
+      "daily"
+    ],
+    "QQQ": [
+      "daily"
+    ],
+    "TQQQ": [
+      "daily"
+    ]
+  },
+  "last_checked_utc": "2026-10-30 18:37:41"
 }
