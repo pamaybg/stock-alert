@@ -1,9 +1,6 @@
 {
-  "date": "2026-11-05",
+  "date": "2026-11-06",
   "alerted": {
-    "SOXX": [
-      "daily"
-    ],
     "SOXL": [
       "daily"
     ],
@@ -12,7 +9,10 @@
     ],
     "TQQQ": [
       "daily"
+    ],
+    "SPCX": [
+      "daily"
     ]
   },
-  "last_checked_utc": "2026-11-05 01:04:38"
+  "last_checked_utc": "2026-11-05 20:40:00"
 }
