@@ -1,12 +1,9 @@
 {
-  "date": "2026-11-18",
+  "date": "2026-11-19",
   "alerted": {
     "SOXL": [
       "daily"
-    ],
-    "TQQQ": [
-      "daily"
     ]
   },
-  "last_checked_utc": "2026-11-18 03:10:09"
+  "last_checked_utc": "2026-11-18 21:26:05"
 }
